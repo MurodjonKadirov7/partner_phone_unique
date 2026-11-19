@@ -1,7 +1,7 @@
 # Copyright todoo.uz. License OPL-1 (Odoo Proprietary License v1.0).
 {
     'name': 'Partner Phone Unique | Prevent Duplicate Contacts by Phone Number',
-    'version': '20.0.1.1.0',
+    'version': '20.0.1.1.1',
     'category': 'Contacts',
     'summary': 'Block duplicate contacts: warn as soon as a phone number already '
                'used by another contact is typed, and refuse to save it',
@@ -22,8 +22,6 @@ do not block the installation.
     'website': 'https://todoo.uz',
     'support': 'info@todoo.uz',
     'license': 'OPL-1',
-    'price': 5.49,
-    'currency': 'USD',
     'images': ['static/description/banner.png'],
     'depends': ['contacts'],
     'installable': True,
