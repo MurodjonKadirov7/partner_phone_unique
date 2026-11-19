@@ -75,3 +75,15 @@ msgstr "Bu telefon numarası başka bir kişi tarafından zaten kullanılıyor."
 #: code:addons/partner_phone_unique/models/res_partner.py:0
 msgid "This phone number is already used by another contact: %s."
 msgstr "Bu telefon numarası zaten başka bir kişi tarafından kullanılıyor: %s."
+
+#. module: partner_phone_unique
+#: model:ir.model.fields,help:partner_phone_unique.field_res_partner__mobile_digits
+#: model:ir.model.fields,help:partner_phone_unique.field_res_users__mobile_digits
+msgid "Digits-only mobile used to detect duplicate contacts."
+msgstr "Yinelenen kişileri tespit etmek için kullanılan yalnızca rakamlardan oluşan cep telefonu."
+
+#. module: partner_phone_unique
+#: model:ir.model.fields,field_description:partner_phone_unique.field_res_partner__mobile_digits
+#: model:ir.model.fields,field_description:partner_phone_unique.field_res_users__mobile_digits
+msgid "Mobile Digits"
+msgstr "Cep telefonu rakamları"

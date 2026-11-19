@@ -171,6 +171,9 @@ class TestPartnerPhoneUnique(TransactionCase):
         # The way out of the duplicates the module found at install
         source = self.env['res.partner'].create({'name': 'Source', 'phone': '+998 97 300 40 50'})
         destination = self.env['res.partner'].create({'name': 'Destination'})
+        # Odoo 18: hisoblangan phone_digits flush paytida yoziladi — SQL'dan oldin
+        # flush qilinmasa, u SQL qo'ygan qiymatni ustidan yozadi
+        self.env.flush_all()
         self.env.cr.execute(
             "UPDATE res_partner SET phone = %s, phone_digits = %s WHERE id = %s",
             ['998 97 300 40 50', '998973004050', destination.id])
@@ -206,6 +209,9 @@ class TestPartnerPhoneUnique(TransactionCase):
         source = self.env['res.partner'].create({'name': 'Source', 'phone': '+998 97 400 50 60'})
         destination = self.env['res.partner'].create({'name': 'Destination'})
         third = self.env['res.partner'].create({'name': 'Third'})
+        # Odoo 18: hisoblangan phone_digits flush paytida yoziladi — SQL'dan oldin
+        # flush qilinmasa, u SQL qo'ygan qiymatni ustidan yozadi
+        self.env.flush_all()
         self.env.cr.execute(
             "UPDATE res_partner SET phone = %s, phone_digits = %s WHERE id = %s",
             ['998 97 400 50 60', '998974005060', third.id])
@@ -235,3 +241,54 @@ class TestPartnerPhoneUnique(TransactionCase):
                 {'name': 'Visitor', 'phone': '+998 97 700 80 90'})
         self.assertNotIn('Secret Owner', str(error.exception))
 
+
+    # ------------------------------------------------------------------
+    # Odoo 18: res.partner also has a Mobile field, checked the same way
+    # ------------------------------------------------------------------
+    def test_mobile_taken_by_another_contacts_phone(self):
+        self.env['res.partner'].create({'name': 'Phone Owner', 'phone': '+998 97 810 20 30'})
+        with self.assertRaises(ValidationError) as error, self.env.cr.savepoint():
+            self.env['res.partner'].create({'name': 'Dup', 'mobile': '998978102030'})
+        self.assertIn('Phone Owner', str(error.exception))
+        self.assertIn('998978102030', str(error.exception), 'the number that was typed')
+
+    def test_phone_taken_by_another_contacts_mobile(self):
+        self.env['res.partner'].create({'name': 'Mobile Owner', 'mobile': '+998 97 820 20 30'})
+        with self.assertRaises(ValidationError), self.env.cr.savepoint():
+            self.env['res.partner'].create({'name': 'Dup', 'phone': '00998 97 820 20 30'})
+        with self.assertRaises(ValidationError), self.env.cr.savepoint():
+            self.env['res.partner'].create({'name': 'Dup 2', 'mobile': '998978202030'})
+
+    def test_same_number_in_phone_and_mobile_of_one_contact(self):
+        partner = self.env['res.partner'].create(
+            {'name': 'Both', 'phone': '+998 97 830 20 30', 'mobile': '998978302030'})
+        self.assertEqual(partner.mobile_digits, partner.phone_digits)
+        partner.write({'mobile': '+998 97 830 20 30'})
+
+    def test_onchange_on_mobile_warns(self):
+        self.env['res.partner'].create({'name': 'Number Owner', 'phone': '+998 97 840 20 30'})
+        new = self.env['res.partner'].new({'name': 'Typing', 'mobile': '998978402030'})
+        self.assertIn('Number Owner', new._onchange_mobile_check_duplicate()['warning']['message'])
+        partner = self.env['res.partner'].create({'name': 'Me', 'mobile': '+998 97 850 20 30'})
+        virtual = self.env['res.partner'].new({'mobile': '998978502030'}, origin=partner)
+        self.assertFalse(virtual._onchange_mobile_check_duplicate(), 'own number')
+
+    def test_duplicate_a_contact_drops_the_mobile(self):
+        partner = self.env['res.partner'].create({'name': 'Original', 'mobile': '+998 97 860 20 30'})
+        self.assertFalse(partner.copy().mobile)
+
+    def test_archived_contact_frees_its_mobile(self):
+        self.env['res.partner'].create({'name': 'Old', 'mobile': '+998 97 870 20 30', 'active': False})
+        new = self.env['res.partner'].create({'name': 'New', 'phone': '+998 97 870 20 30'})
+        self.assertEqual(new.phone_digits, '998978702030')
+
+    def test_merge_moves_the_mobile_and_the_phone(self):
+        # The source holds one number in both fields: no false duplicate on merge
+        source = self.env['res.partner'].create(
+            {'name': 'Source', 'phone': '+998 97 880 20 30', 'mobile': '+998 97 880 20 30'})
+        destination = self.env['res.partner'].create({'name': 'Destination'})
+        self._merge(source + destination, destination)
+        self.assertEqual(destination.phone, '+998 97 880 20 30')
+        self.assertEqual(destination.mobile, '+998 97 880 20 30')
+        with self.assertRaises(ValidationError), self.env.cr.savepoint():
+            self.env['res.partner'].create({'name': 'After', 'mobile': '998978802030'})

@@ -9,9 +9,19 @@ class BasePartnerMergeAutomaticWizard(models.TransientModel):
         # deleted later, still hold it. Same pick as the core: the destination
         # first, then the last source. A third contact with this number still
         # refuses the merge.
-        phone = dst_partner.phone or next(
-            (partner.phone for partner in reversed(src_partners) if partner.phone), False)
-        src_partners.filtered('phone').sudo().write({'phone': False})
-        if phone and phone != dst_partner.phone:
-            dst_partner.write({'phone': phone})
+        # Odoo 18: the same for the Mobile field. Both fields of the sources are
+        # cleared first: a source may hold one number in its Phone and Mobile.
+        numbers = {
+            field_name: dst_partner[field_name] or next(
+                (partner[field_name] for partner in reversed(src_partners) if partner[field_name]), False)
+            for field_name in ('phone', 'mobile')
+        }
+        src_partners.filtered(lambda partner: partner.phone or partner.mobile).sudo().write(
+            {'phone': False, 'mobile': False})
+        values = {
+            field_name: number for field_name, number in numbers.items()
+            if number and number != dst_partner[field_name]
+        }
+        if values:
+            dst_partner.write(values)
         return super()._update_values(src_partners, dst_partner)

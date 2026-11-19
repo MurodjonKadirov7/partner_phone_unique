@@ -23,6 +23,15 @@ class ResPartner(models.Model):
         index=True,
         help='Digits-only phone used to detect duplicate contacts.',
     )
+    # Odoo 18: res.partner has a separate Mobile field (base/models/res_partner.py:285).
+    # One number belongs to one contact whichever of the two fields holds it.
+    mobile_digits = fields.Char(
+        string='Mobile Digits',
+        compute='_compute_mobile_digits',
+        store=True,
+        index=True,
+        help='Digits-only mobile used to detect duplicate contacts.',
+    )
 
     @staticmethod
     def _phone_to_digits(number):
@@ -39,6 +48,11 @@ class ResPartner(models.Model):
         for partner in self:
             partner.phone_digits = self._phone_to_digits(partner.phone)
 
+    @api.depends('mobile')
+    def _compute_mobile_digits(self):
+        for partner in self:
+            partner.mobile_digits = self._phone_to_digits(partner.mobile)
+
     def _find_phone_duplicate(self, digits, exclude_ids):
         """Return another contact having this number (empty recordset if none)."""
         if not digits:
@@ -46,7 +60,7 @@ class ResPartner(models.Model):
         # sudo: the number is unique in the whole database, including contacts
         # the record rules of a multi-company setup would hide.
         return self.sudo().search([
-            ('phone_digits', '=', digits),
+            '|', ('phone_digits', '=', digits), ('mobile_digits', '=', digits),
             ('id', 'not in', list(exclude_ids)),
             # explicit: a caller's active_test=False must not count archived contacts
             ('active', '=', True),
@@ -55,12 +69,13 @@ class ResPartner(models.Model):
     def copy_data(self, default=None):
         # The copy of a contact cannot keep a number that must stay unique
         vals_list = super().copy_data(default=default)
-        if 'phone' not in (default or {}):
-            for vals in vals_list:
-                vals.pop('phone', None)
+        for field_name in ('phone', 'mobile'):
+            if field_name not in (default or {}):
+                for vals in vals_list:
+                    vals.pop(field_name, None)
         return vals_list
 
-    @api.constrains('phone_digits', 'active')
+    @api.constrains('phone_digits', 'mobile_digits', 'active')
     def _check_phone_unique(self):
         # While modules load, the field is computed for the existing contacts
         # and data files create theirs: duplicates already in the database must
@@ -69,22 +84,34 @@ class ResPartner(models.Model):
             return
         for partner in self:
             # An archived contact holds no number; restoring it checks again.
-            if not partner.phone_digits or not partner.active:
+            if not partner.active:
                 continue
-            duplicate = partner._find_phone_duplicate(partner.phone_digits, partner.ids)
-            if duplicate:
-                if not self.env.user._is_internal():
-                    # A website visitor must not learn who owns a number.
-                    raise ValidationError(_('This phone number is already used by another contact.'))
-                raise ValidationError(_(
-                    'The phone number "%(phone)s" is already used by another contact: %(name)s.',
-                    phone=partner.phone,
-                    name=duplicate.display_name,
-                ))
+            # The same number in the Phone and the Mobile of one contact is fine.
+            for digits, number in ((partner.phone_digits, partner.phone),
+                                   (partner.mobile_digits, partner.mobile)):
+                if not digits:
+                    continue
+                duplicate = partner._find_phone_duplicate(digits, partner.ids)
+                if duplicate:
+                    if not self.env.user._is_internal():
+                        # A website visitor must not learn who owns a number.
+                        raise ValidationError(_('This phone number is already used by another contact.'))
+                    raise ValidationError(_(
+                        'The phone number "%(phone)s" is already used by another contact: %(name)s.',
+                        phone=number,
+                        name=duplicate.display_name,
+                    ))
 
     @api.onchange('phone')
     def _onchange_phone_check_duplicate(self):
-        digits = self._phone_to_digits(self.phone)
+        return self._duplicate_number_warning(self.phone)
+
+    @api.onchange('mobile')
+    def _onchange_mobile_check_duplicate(self):
+        return self._duplicate_number_warning(self.mobile)
+
+    def _duplicate_number_warning(self, number):
+        digits = self._phone_to_digits(number)
         if not digits:
             return
         # _origin is the saved record; empty on a new contact.
